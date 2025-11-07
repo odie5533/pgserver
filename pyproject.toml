@@ -1,6 +1,6 @@
 [project]
 name = "pgserver" # Required
-version = "0.1.4"  # Required
+version = "0.2.0"  # Required
 description = "Self-contained postgres server for your python applications" # Required
 readme = "README.md" # Optional
 requires-python = ">=3.9"
@@ -12,9 +12,16 @@ dependencies = [
     "fasteners>=0.19",
     "platformdirs>=4.0.0",
     "psutil>=5.9.0",
+    "pgserver-postgres-18==0.2.0",  # Default to PostgreSQL 18
 ]
 
 [project.optional-dependencies]
+pg16 = [
+    "pgserver-postgres-16==0.2.0",
+]
+pg17 = [
+    "pgserver-postgres-17==0.2.0",
+]
 dev = [
     "sysv_ipc",
 ]
@@ -31,11 +38,6 @@ include = ["pgserver*"]  # package names should match these glob patterns (["*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[tool.cibuildwheel]
-before-all = "make"
-test-extras = "test"
-test-command = "bash -x {project}/cibuildwheel_test.bash {project}"
 
 [build-system]
 # These are the assumed default build requirements from pip:

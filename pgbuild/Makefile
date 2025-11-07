@@ -2,11 +2,38 @@ SHELL := /bin/bash
 INSTALL_PREFIX := $(shell pwd)/../src/pgserver/pginstall/
 BUILD := $(shell pwd)/pgbuild/
 
-.PHONY: all
-all: pgvector postgres
+# PostgreSQL version to build (can be overridden via environment variable)
+# Default to 18 if not specified
+PGSERVER_VERSION ?= 18
 
-### postgres
-POSTGRES_VERSION := 16.2
+# Detect OS for setting correct RPATH
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+    RPATH_FLAG := -Wl,-rpath,'\$$\$$ORIGIN/../lib'
+else ifeq ($(UNAME_S),Darwin)
+    RPATH_FLAG := -Wl,-rpath,@loader_path/../lib
+endif
+
+### PostgreSQL version definitions
+PG16_VERSION := 16.10
+PG17_VERSION := 17.6
+PG18_VERSION := 18.0
+
+# Set the version-specific variables based on PGSERVER_VERSION
+ifeq ($(PGSERVER_VERSION),16)
+    POSTGRES_VERSION := $(PG16_VERSION)
+else ifeq ($(PGSERVER_VERSION),17)
+    POSTGRES_VERSION := $(PG17_VERSION)
+else ifeq ($(PGSERVER_VERSION),18)
+    POSTGRES_VERSION := $(PG18_VERSION)
+else
+    $(error Invalid PGSERVER_VERSION: $(PGSERVER_VERSION). Must be 16, 17, or 18)
+endif
+
+.PHONY: all
+all: postgres pgvector
+
+### PostgreSQL build
 POSTGRES_URL := https://ftp.postgresql.org/pub/source/v$(POSTGRES_VERSION)/postgresql-$(POSTGRES_VERSION).tar.gz
 POSTGRES_SRC := postgresql-$(POSTGRES_VERSION)
 POSTGRES_BLD := $(POSTGRES_SRC)
@@ -22,7 +49,7 @@ $(POSTGRES_SRC)/configure: $(POSTGRES_SRC).tar.gz
 ## configure
 $(POSTGRES_BLD)/config.status: $(POSTGRES_SRC)/configure
 	mkdir -p $(POSTGRES_BLD)
-	cd $(POSTGRES_BLD) && ../$(POSTGRES_SRC)/configure --prefix=$(INSTALL_PREFIX) --without-readline --without-icu
+	cd $(POSTGRES_BLD) && LDFLAGS="$(RPATH_FLAG)" ../$(POSTGRES_SRC)/configure --prefix=$(INSTALL_PREFIX) --without-readline --without-icu
 
 ## build
 # https://stackoverflow.com/questions/68379786/
@@ -34,12 +61,33 @@ $(POSTGRES_BLD)/src/bin/initdb/initdb: $(POSTGRES_BLD)/config.status
 $(INSTALL_PREFIX)/bin/postgres: $(POSTGRES_BLD)/config.status
 	mkdir -p $(INSTALL_PREFIX)
 	unset MAKELEVEL && unset MAKEFLAGS && unset MFLAGS && $(MAKE) -C $(POSTGRES_BLD) install
+	# Set RPATH on all binaries to find bundled libraries
+	@echo "Setting RPATH on PostgreSQL binaries..."
+ifeq ($(UNAME_S),Linux)
+	@if command -v patchelf >/dev/null 2>&1; then \
+		for binary in $(INSTALL_PREFIX)/bin/*; do \
+			if file "$$binary" | grep -q ELF; then \
+				echo "Setting RPATH for $$binary"; \
+				patchelf --force-rpath --set-rpath '$$ORIGIN/../lib' "$$binary" || true; \
+			fi \
+		done; \
+	else \
+		echo "Warning: patchelf not found, binaries may not find bundled libraries"; \
+	fi
+else ifeq ($(UNAME_S),Darwin)
+	@for binary in $(INSTALL_PREFIX)/bin/*; do \
+		if file "$$binary" | grep -q "Mach-O"; then \
+			echo "Setting RPATH for $$binary"; \
+			install_name_tool -add_rpath @loader_path/../lib "$$binary" 2>/dev/null || true; \
+		fi \
+	done
+endif
 
 .PHONY: postgres
 postgres: $(INSTALL_PREFIX)/bin/postgres
 
 ### pgvector
-PGVECTOR_TAG := v0.6.2
+PGVECTOR_TAG := v0.8.1
 PGVECTOR_URL := https://github.com/pgvector/pgvector/archive/refs/tags/$(PGVECTOR_TAG).tar.gz
 PGVECTOR_DIR := pgvector-$(PGVECTOR_TAG)
 
@@ -47,7 +95,6 @@ $(PGVECTOR_DIR).tar.gz:
 	curl -L -o $(PGVECTOR_DIR).tar.gz $(PGVECTOR_URL)
 
 $(PGVECTOR_DIR)/Makefile: $(PGVECTOR_DIR).tar.gz
-	# tar extract into pgvector-$(PGVECTOR_TAG)
 	mkdir -p $(PGVECTOR_DIR)
 	tar xzf $(PGVECTOR_DIR).tar.gz -C $(PGVECTOR_DIR) --strip-components=1
 	touch $(PGVECTOR_DIR)/Makefile
