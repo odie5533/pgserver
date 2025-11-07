@@ -1,11 +1,48 @@
 from pathlib import Path
 import sys
 import subprocess
-from typing import Optional, List, Callable
+from typing import Optional, List, Callable, Tuple
 import logging
 import tempfile
+import site
 
-POSTGRES_BIN_PATH = Path(__file__).parent / "pginstall" / "bin"
+def _find_postgres_binaries() -> Tuple[Optional[Path], Optional[int]]:
+    """Find PostgreSQL binaries installed by pgserver-postgres-* packages.
+
+    Returns:
+        Tuple of (bin_path, version_number) or (None, None) if not found
+    """
+    # Check all site-packages directories for pgserver_binaries
+    for site_dir in site.getsitepackages() + [site.getusersitepackages()]:
+        if not site_dir:
+            continue
+
+        binaries_base = Path(site_dir) / "pgserver_binaries"
+        if not binaries_base.exists():
+            continue
+
+        # Look for pg16, pg17, or pg18 directories
+        for pg_dir in binaries_base.glob("pg*"):
+            if not pg_dir.is_dir():
+                continue
+
+            bin_path = pg_dir / "bin"
+            if not bin_path.exists():
+                continue
+
+            # Extract version number from directory name (e.g., "pg16" -> 16)
+            try:
+                version = int(pg_dir.name[2:])
+                # Verify this is a valid PostgreSQL installation
+                if (bin_path / "postgres").exists() or (bin_path / "postgres.exe").exists():
+                    return (bin_path, version)
+            except (ValueError, IndexError):
+                continue
+
+    return (None, None)
+
+# Find installed PostgreSQL binaries
+POSTGRES_BIN_PATH, INSTALLED_POSTGRES_VERSION = _find_postgres_binaries()
 
 _logger = logging.getLogger('pgserver')
 
@@ -58,7 +95,8 @@ def create_command_function(pg_exe_name : str) -> Callable:
 
     return command
 
-__all__ = []
+__all__ = ['INSTALLED_POSTGRES_VERSION']
+
 def _init():
     for path in POSTGRES_BIN_PATH.iterdir():
         exe_name = path.name

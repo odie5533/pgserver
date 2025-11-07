@@ -9,7 +9,7 @@ import platform
 import psutil
 import time
 
-from ._commands import POSTGRES_BIN_PATH, initdb, pg_ctl
+from ._commands import POSTGRES_BIN_PATH, INSTALLED_POSTGRES_VERSION, initdb, pg_ctl
 from .utils import find_suitable_port, find_suitable_socket_dir, DiskList, PostmasterInfo, process_is_running
 
 if platform.system() != 'Windows':
@@ -39,6 +39,7 @@ class PostgresServer:
 
         self.pgdata = pgdata
         self.log = self.pgdata / 'log'
+        self.postgres_version = INSTALLED_POSTGRES_VERSION
 
         # postgres user name, NB not the same as system user name
         self.system_user = None
