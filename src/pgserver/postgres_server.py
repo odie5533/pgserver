@@ -145,31 +145,41 @@ class PostgresServer:
             if postmaster_info is None:
                 _logger.info(f"no postmaster.pid file found in {self.pgdata}")
 
+            use_tcp = False
+            socket_dir = None
             if platform.system() != 'Windows':
-                # use sockets to avoid any future conflict with port numbers
-                socket_dir = find_suitable_socket_dir(self.pgdata, self.runtime_path)
+                # Prefer Unix domain sockets on non-Windows, but fall back to TCP
+                try:
+                    socket_dir = find_suitable_socket_dir(self.pgdata, self.runtime_path)
 
-                if self.system_user is not None and socket_dir != self.pgdata:
-                    ensure_prefix_permissions(socket_dir)
-                    socket_dir.chmod(0o777)
+                    if self.system_user is not None and socket_dir != self.pgdata:
+                        ensure_prefix_permissions(socket_dir)
+                        socket_dir.chmod(0o777)
 
-                pg_ctl_args = ['-w',  # wait for server to start
-                        '-o', '-h ""',  # no listening on any IP addresses (forwarded to postgres exec) see man postgres for -hj
-                        '-o',  f'-k {socket_dir}', # socket option (forwarded to postgres exec) see man postgres for -k
-                        '-l', str(self.log), # log location: set to pgdata dir also
-                        'start' # action
-                ]
-            else: # Windows,
-                socket_dir = None
-                # socket.AF_UNIX is undefined when running on Windows, so default to a port
+                    pg_ctl_args = ['-w',  # wait for server to start
+                            '-o', '-h ""',  # no listening on any IP addresses (forwarded to postgres exec)
+                            '-o',  f'-k {socket_dir}', # socket directory
+                            '-l', str(self.log), # log location
+                            'start' # action
+                    ]
+                except PermissionError:
+                    _logger.warning("Unix domain sockets not permitted; falling back to TCP port")
+                    use_tcp = True
+                except OSError as e:
+                    _logger.warning(f"Unix domain socket setup failed ({e}); falling back to TCP port")
+                    use_tcp = True
+            else:
+                use_tcp = True
+
+            if use_tcp:
+                # socket.AF_UNIX may not be available/permitted; use TCP
                 host = "127.0.0.1"
                 port = find_suitable_port(host)
                 pg_ctl_args = ['-w',  # wait for server to start
-                        '-o', f'-h "{host}"',
-                        '-o', f'-p {port}',
-                        '-l', str(self.log), # log location: set to pgdata dir also
-                        'start' # action
-                ]
+                               '-o', f'-h "{host}"',
+                               '-o', f'-p {port}',
+                               '-l', str(self.log),
+                               'start']
 
             try:
                 _logger.info(f"running pg_ctl... {pg_ctl_args=}")

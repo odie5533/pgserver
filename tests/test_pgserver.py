@@ -256,6 +256,20 @@ def test_pgvector(tmp_postgres):
     ret = tmp_postgres.psql("CREATE EXTENSION vector;")
     assert ret.strip() == "CREATE EXTENSION"
 
+def test_postgis(tmp_postgres):
+    ret = tmp_postgres.psql("CREATE EXTENSION postgis;")
+    assert ret.strip() == "CREATE EXTENSION"
+
+    # Test basic PostGIS functionality
+    ret = tmp_postgres.psql("SELECT PostGIS_Version();")
+    assert "POSTGIS" in ret.upper()
+
+    # Test creating a geometry column and inserting spatial data
+    tmp_postgres.psql("CREATE TABLE test_spatial (id SERIAL PRIMARY KEY, geom GEOMETRY(Point, 4326));")
+    tmp_postgres.psql("INSERT INTO test_spatial (geom) VALUES (ST_SetSRID(ST_MakePoint(-71.060316, 48.432044), 4326));")
+    ret = tmp_postgres.psql("SELECT ST_AsText(geom) FROM test_spatial;")
+    assert "POINT" in ret
+
 def test_start_failure_log(caplog):
     """ Test server log contents are shown in python log when failures
     """
