@@ -33,7 +33,9 @@ include = ["pgserver*"]  # package names should match these glob patterns (["*"]
 testpaths = ["tests"]
 
 [tool.cibuildwheel]
-before-all = "make"
+# Ensure doc tools are present in manylinux container for official PostGIS extension SQL/control generation
+# Safe no-op on non-manylinux platforms (yum not present)
+before-all = "bash -lc 'command -v yum >/dev/null 2>&1 && yum -y install libxslt docbook-style-xsl || true; make'"
 test-extras = "test"
 test-command = "bash -x {project}/cibuildwheel_test.bash {project}"
 

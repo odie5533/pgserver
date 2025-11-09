@@ -4,30 +4,38 @@ on:
     branches:
       - testing
       - main
+      - 'claude/**'  # Commented out for local testing
   release:
     types:
       - created
   workflow_dispatch:
+    inputs:
+      python_tag:
+        description: "Python tag to build (e.g., cp313)"
+        required: false
+        default: "cp313"
 jobs:
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-12
-            arch: x86_64
-            deployment-target: '10.9'
-          - os: macos-latest
-            arch: arm64
-            deployment-target: '11.0'
+          # Temporarily disabled for testing PostGIS on Ubuntu only
+          # - os: macos-15-intel
+          #   arch: x86_64
+          #   deployment-target: '10.9'
+          # - os: macos-latest
+          #   arch: arm64
+          #   deployment-target: '11.0'
           - os: ubuntu-latest
             arch: x86_64
             deployment-target: ''
-          - os: windows-2022
-            arch: AMD64
-            deployment-target: ''
+          # - os: windows-2022
+          #   arch: AMD64
+          #   deployment-target: ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
@@ -78,6 +86,8 @@ jobs:
         env:
           CIBW_ARCHS: ${{ matrix.arch }}
           CIBW_SKIP: pp* cp38-* *-musllinux*
+          # Build only a single Python version by default (can be overridden via workflow_dispatch input)
+          CIBW_BUILD: ${{ github.event.inputs.python_tag || 'cp313' }}-*
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment-target }}
         run: python -m cibuildwheel --output-dir wheelhouse
       - name: Save postgres build
@@ -92,7 +102,7 @@ jobs:
            src/pgserver/pginstall
           key: ${{ runner.os }}-${{ runner.arch }}-build-${{ env.cache-name }}-${{
             hashFiles('Makefile', 'pgbuild/Makefile', '.github/workflows/build-and-test.yml') }}
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           path: wheelhouse/*.whl
           name: python-package-distributions
@@ -109,7 +119,7 @@ jobs:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
     steps:
         - name: Download all the dists
-          uses: actions/download-artifact@v3
+          uses: actions/download-artifact@v4
           with:
             name: python-package-distributions
             path: dist/
